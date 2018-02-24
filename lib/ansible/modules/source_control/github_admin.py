@@ -35,11 +35,21 @@ options:
             - The GitHub account password for the user
         default: null
         version_added: "2.4"
+    org:
+        required: true
+        description:
+            - The Github organization you would like to use
+        default: null
+    parentteam:
+        required: false
+        description:
+            - Optionally define a parent team for 'org_list_teams'
+        default: null
     action:
         required: true
         description:
             - Action to perform
-        choices: [ 'org_list_users' ]
+        choices: [ 'org_list_users', 'org_list_teams' ]
 
 
 author:
@@ -54,6 +64,7 @@ EXAMPLES = '''
     token: tokenabc1234567890
     user: testuser
     org: testcompany
+    parentteam: testparent
     action: org_list_users
 
 
@@ -85,8 +96,9 @@ def main():
             password=dict(no_log=True),
             token=dict(no_log=True),
             org=dict(required=True),
+            parentteam=dict(),
             action=dict(
-                required=True, choices=['org_list_users']),
+                required=True, choices=['org_list_users','org_list_teams']),
         ),
         supports_check_mode=True,
         required_one_of=(('password', 'token'),),
@@ -102,6 +114,10 @@ def main():
     login_token = module.params['token']
     action = module.params['action']
     organization = module.params['org']
+    parentteam = module.params['parentteam']
+
+    # define headers for beta features
+    headers = 'application/vnd.github.hellcat-preview+json'
 
     # login to github
     try:
@@ -112,10 +128,13 @@ def main():
 
         # test if we're actually logged in
         gh_obj.me()
+
+        # Set headers for beta features
+        gh_obj.session.headers['Accept'] = headers
+
     except github3.AuthenticationFailed as e:
         module.fail_json(msg='Failed to connect to GitHub: %s' % to_native(e),
-                         details="Please check username and password or token "
-                                 "for repository %s" % repo)
+                         details="Please check username and password or token " )
 
     org = gh_obj.organization(organization)
 
@@ -129,7 +148,22 @@ def main():
         teams = org.teams()
         if teams is not "[]":
             for t in teams:
-                print(t.name)
+                tobj = org.team(t.id)
+                
+                # Uncomment the below if you want to see the full JSON
+                #print(tobj.as_json())
+
+                parentobj = tobj.parent
+                parent = None
+                if parentobj is not None:
+                    parent = parentobj.get('slug')
+                if (parentteam and parent == parentteam) or not parentteam:
+                    members_count = tobj.members_count
+                    print(t.name, " - ", t.description, " (", t.id, ")", " ", members_count, " members - Parent Team: ", parent)
+                    #members = t.members()
+                    #if members is not "[]":
+                    #    for m in members:
+                    #        print("  - ", m)
 
 
 if __name__ == '__main__':
